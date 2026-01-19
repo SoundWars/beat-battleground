@@ -1,12 +1,27 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
+import { HeroSection } from "@/components/home/HeroSection";
+import { CountdownTimer } from "@/components/home/CountdownTimer";
+import { FeaturedSongs } from "@/components/home/FeaturedSongs";
+import { HowItWorks } from "@/components/home/HowItWorks";
+import { ContestTimeline } from "@/components/home/ContestTimeline";
+
+// Contest end date - 2 months from now for registration
+const registrationEndDate = new Date();
+registrationEndDate.setMonth(registrationEndDate.getMonth() + 2);
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <main>
+        <HeroSection />
+        <CountdownTimer phase="registration" endDate={registrationEndDate} />
+        <FeaturedSongs />
+        <HowItWorks />
+        <ContestTimeline />
+      </main>
+      <Footer />
     </div>
   );
 };
