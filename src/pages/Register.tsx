@@ -1,55 +1,109 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
-import { Music2, User, Mail, Lock, Mic2, Users, CreditCard, Check, DollarSign } from "lucide-react";
+import { Music2, User, Mail, Lock, Mic2, Users, CreditCard, Check, DollarSign, AlertTriangle, Shield } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "react-router-dom";
-import { API_ENDPOINTS, APP_CONFIG } from "@/config/api";
+import { API_ENDPOINTS, APP_CONFIG, FLUTTERWAVE_CONFIG, VALIDATION, sanitizeInput } from "@/config/api";
+import { useToast } from "@/hooks/use-toast";
 
 type UserType = "artist" | "voter";
-type RegistrationStep = "details" | "payment" | "success";
+type RegistrationStep = "details" | "payment" | "success" | "blocked";
+
+// Security: Form validation
+const validateForm = (data: typeof initialFormData, userType: UserType): string | null => {
+  if (!data.name.trim() || data.name.length > VALIDATION.NAME_MAX_LENGTH) {
+    return "Please enter a valid name (max 100 characters)";
+  }
+  if (!VALIDATION.EMAIL_REGEX.test(data.email)) {
+    return "Please enter a valid email address";
+  }
+  if (data.password.length < VALIDATION.PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${VALIDATION.PASSWORD_MIN_LENGTH} characters`;
+  }
+  if (data.password !== data.confirmPassword) {
+    return "Passwords do not match";
+  }
+  if (userType === "artist") {
+    if (!data.artistName.trim() || data.artistName.length > VALIDATION.ARTIST_NAME_MAX_LENGTH) {
+      return "Please enter a valid artist name (max 50 characters)";
+    }
+    if (!data.genre.trim() || data.genre.length > VALIDATION.GENRE_MAX_LENGTH) {
+      return "Please enter a valid genre (max 30 characters)";
+    }
+  }
+  return null;
+};
+
+const initialFormData = {
+  name: "",
+  email: "",
+  password: "",
+  confirmPassword: "",
+  artistName: "",
+  genre: "",
+};
 
 const Register = () => {
   const [userType, setUserType] = useState<UserType>("voter");
   const [step, setStep] = useState<RegistrationStep>("details");
   const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    artistName: "",
-    genre: "",
-  });
+  const [formData, setFormData] = useState(initialFormData);
+  const [isWinner, setIsWinner] = useState(false);
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Security: Validate form inputs
+    const validationError = validateForm(formData, userType);
+    if (validationError) {
+      toast({
+        title: "Validation Error",
+        description: validationError,
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
-      // API call would go here
+      // Sanitize inputs before sending
+      const sanitizedData = {
+        name: sanitizeInput(formData.name),
+        email: sanitizeInput(formData.email),
+        password: formData.password, // Don't sanitize password
+        role: userType,
+        artistName: userType === "artist" ? sanitizeInput(formData.artistName) : undefined,
+        genre: userType === "artist" ? sanitizeInput(formData.genre) : undefined,
+      };
+
       const response = await fetch(API_ENDPOINTS.AUTH.REGISTER, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          role: userType,
-        }),
+        body: JSON.stringify(sanitizedData),
       });
       
       const data = await response.json();
       
+      // Security: Check if artist is a past winner (blocked from participation)
+      if (data.is_past_winner) {
+        setIsWinner(true);
+        setStep("blocked");
+        return;
+      }
+      
       if (data.requires_payment && userType === "artist") {
-        // Redirect to payment step
         setStep("payment");
       } else {
         setStep("success");
       }
     } catch (error) {
-      console.log("Registration - will connect to backend:", { userType, ...formData });
+      console.log("Registration - will connect to backend:", { userType });
       // For demo: proceed to payment step for artists
       if (userType === "artist") {
         setStep("payment");
@@ -65,20 +119,39 @@ const Register = () => {
     setIsLoading(true);
     
     try {
-      // Create Stripe checkout session
-      const response = await fetch(API_ENDPOINTS.PAYMENTS.CREATE_CHECKOUT, {
+      // Generate unique transaction reference
+      const txRef = `SW-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Initialize Flutterwave payment
+      const response = await fetch(API_ENDPOINTS.PAYMENTS.INITIALIZE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contest_id: 1 }), // Current contest
+        body: JSON.stringify({ 
+          contest_id: 1,
+          tx_ref: txRef,
+          amount: APP_CONFIG.ARTIST_REGISTRATION_FEE,
+          currency: APP_CONFIG.CURRENCY,
+          redirect_url: `${window.location.origin}/payment/success`,
+          customer: {
+            email: sanitizeInput(formData.email),
+            name: sanitizeInput(formData.name),
+          },
+          customizations: {
+            title: "SoundWars Artist Registration",
+            description: "Contest participation fee",
+            logo: `${window.location.origin}/favicon.ico`,
+          },
+        }),
       });
       
       const data = await response.json();
       
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
+      if (data.payment_link) {
+        // Redirect to Flutterwave payment page
+        window.location.href = data.payment_link;
       }
     } catch (error) {
-      console.log("Payment - will connect to Stripe:", { fee: APP_CONFIG.ARTIST_REGISTRATION_FEE });
+      console.log("Payment - will connect to Flutterwave:", { fee: APP_CONFIG.ARTIST_REGISTRATION_FEE });
       // For demo: proceed to success
       setStep("success");
     } finally {
@@ -370,12 +443,14 @@ const Register = () => {
                     onClick={handlePayment}
                     disabled={isLoading}
                   >
-                    {isLoading ? "Redirecting to Payment..." : `Pay ${APP_CONFIG.ARTIST_REGISTRATION_FEE_DISPLAY} with Stripe`}
+                    {isLoading ? "Redirecting to Payment..." : `Pay ${APP_CONFIG.ARTIST_REGISTRATION_FEE_DISPLAY} with Flutterwave`}
                   </Button>
 
-                  <p className="text-center text-xs text-muted-foreground">
-                    Secure payment powered by Stripe. Your payment information is encrypted.
-                  </p>
+                  {/* Security Notice */}
+                  <div className="flex items-center gap-2 justify-center text-xs text-muted-foreground">
+                    <Shield className="w-4 h-4 text-primary" />
+                    <span>Secure payment powered by Flutterwave. Your payment information is encrypted.</span>
+                  </div>
 
                   <button 
                     onClick={() => setStep("details")}
@@ -383,6 +458,46 @@ const Register = () => {
                   >
                     ← Back to registration details
                   </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === "blocked" && (
+              <motion.div
+                key="blocked"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="max-w-md mx-auto text-center"
+              >
+                <div className="glass rounded-2xl p-8 border border-destructive/30">
+                  <div className="w-20 h-20 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-6">
+                    <AlertTriangle className="w-10 h-10 text-destructive" />
+                  </div>
+                  
+                  <h1 className="font-display text-3xl font-bold mb-3 text-destructive">
+                    Contest Entry Blocked
+                  </h1>
+                  
+                  <p className="text-muted-foreground mb-4">
+                    Our records show you are a <span className="font-bold text-primary">previous contest winner</span>. 
+                  </p>
+                  
+                  <p className="text-sm text-muted-foreground mb-8">
+                    To give other artists a fair chance, past winners cannot participate in contests for {APP_CONFIG.WINNER_CONTEST_COOLDOWN_MONTHS} months after their win. Thank you for your understanding!
+                  </p>
+
+                  <div className="space-y-3">
+                    <Link to="/">
+                      <Button variant="glass" size="lg" className="w-full">
+                        Go to Homepage
+                      </Button>
+                    </Link>
+                    <Link to="/leaderboard">
+                      <Button variant="outline" size="lg" className="w-full">
+                        View Current Contest
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               </motion.div>
             )}
