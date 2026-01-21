@@ -1,7 +1,10 @@
 import { motion } from "framer-motion";
-import { Play, Pause, Heart, Trophy } from "lucide-react";
+import { Play, Pause, Heart, Trophy, Check, Lock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useVoting } from "@/hooks/useVoting";
+import { useToast } from "@/hooks/use-toast";
+import { Link } from "react-router-dom";
 
 interface Song {
   id: string;
@@ -62,6 +65,62 @@ const getRankBadge = (rank: number) => {
 
 export const FeaturedSongs = () => {
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const { voteInfo, castVote, isLoading, isVoteDisabled } = useVoting();
+  const { toast } = useToast();
+
+  const handleVote = async (songId: string) => {
+    // Security: Prevent voting if already voted
+    if (isVoteDisabled) {
+      toast({
+        title: "Already Voted",
+        description: "You have already cast your vote in this contest. Only one vote per user is allowed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const result = await castVote(songId);
+    
+    if (result.success) {
+      toast({
+        title: "Vote Cast Successfully!",
+        description: "Thank you for voting. Your vote has been recorded.",
+      });
+    } else {
+      toast({
+        title: "Vote Failed",
+        description: result.error || "Unable to cast vote. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getVoteButtonContent = (songId: string) => {
+    if (voteInfo.hasVoted && voteInfo.votedSongId === songId) {
+      return (
+        <>
+          <Check className="w-4 h-4" />
+          Voted
+        </>
+      );
+    }
+    
+    if (isVoteDisabled) {
+      return (
+        <>
+          <Lock className="w-4 h-4" />
+          Locked
+        </>
+      );
+    }
+    
+    return (
+      <>
+        <Heart className="w-4 h-4" />
+        Vote
+      </>
+    );
+  };
 
   return (
     <section className="py-20 relative">
@@ -78,6 +137,11 @@ export const FeaturedSongs = () => {
           <p className="text-muted-foreground max-w-xl mx-auto">
             Listen to the songs leading the competition and cast your vote
           </p>
+          {isVoteDisabled && (
+            <p className="text-sm text-primary mt-2">
+              ✓ You have already voted in this contest
+            </p>
+          )}
         </motion.div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -88,7 +152,9 @@ export const FeaturedSongs = () => {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.1 }}
-              className="group glass rounded-2xl p-4 hover:glow-primary transition-all duration-500"
+              className={`group glass rounded-2xl p-4 hover:glow-primary transition-all duration-500 ${
+                voteInfo.votedSongId === song.id ? "ring-2 ring-primary" : ""
+              }`}
             >
               {/* Cover */}
               <div className="relative mb-4 rounded-xl overflow-hidden aspect-square">
@@ -114,6 +180,14 @@ export const FeaturedSongs = () => {
                 <div className={`absolute top-3 left-3 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${getRankBadge(song.rank)}`}>
                   {song.rank}
                 </div>
+
+                {/* Voted Badge */}
+                {voteInfo.votedSongId === song.id && (
+                  <div className="absolute top-3 right-3 bg-primary text-primary-foreground px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    Your Vote
+                  </div>
+                )}
               </div>
 
               {/* Info */}
@@ -126,9 +200,14 @@ export const FeaturedSongs = () => {
                   <Trophy className="w-4 h-4 text-primary" />
                   <span>{song.votes.toLocaleString()}</span>
                 </div>
-                <Button variant="vote" size="sm">
-                  <Heart className="w-4 h-4" />
-                  Vote
+                <Button 
+                  variant={voteInfo.votedSongId === song.id ? "default" : "vote"} 
+                  size="sm"
+                  onClick={() => handleVote(song.id)}
+                  disabled={isLoading || isVoteDisabled}
+                  className={voteInfo.votedSongId === song.id ? "bg-primary" : ""}
+                >
+                  {getVoteButtonContent(song.id)}
                 </Button>
               </div>
             </motion.div>
@@ -141,9 +220,11 @@ export const FeaturedSongs = () => {
           viewport={{ once: true }}
           className="text-center mt-10"
         >
-          <Button variant="heroOutline" size="lg">
-            View Full Leaderboard
-          </Button>
+          <Link to="/leaderboard">
+            <Button variant="heroOutline" size="lg">
+              View Full Leaderboard
+            </Button>
+          </Link>
         </motion.div>
       </div>
     </section>

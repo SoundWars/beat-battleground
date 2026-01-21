@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
-import { Trophy, Play, Pause, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Trophy, Play, Pause, TrendingUp, TrendingDown, Minus, Check, Lock, Heart } from "lucide-react";
 import { useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
+import { useVoting } from "@/hooks/useVoting";
+import { useToast } from "@/hooks/use-toast";
 
 interface Song {
   id: string;
@@ -96,6 +98,67 @@ const getTrendIcon = (current: number, previous: number) => {
 
 const Leaderboard = () => {
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const { voteInfo, castVote, isLoading, isVoteDisabled } = useVoting();
+  const { toast } = useToast();
+
+  const handleVote = async (songId: string) => {
+    // Security: Prevent voting if already voted
+    if (isVoteDisabled) {
+      toast({
+        title: "Already Voted",
+        description: "You have already cast your vote in this contest. Only one vote per user is allowed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const result = await castVote(songId);
+    
+    if (result.success) {
+      toast({
+        title: "Vote Cast Successfully!",
+        description: "Thank you for voting. Your vote has been recorded.",
+      });
+    } else {
+      toast({
+        title: "Vote Failed",
+        description: result.error || "Unable to cast vote. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getVoteButton = (songId: string) => {
+    if (voteInfo.hasVoted && voteInfo.votedSongId === songId) {
+      return (
+        <Button variant="default" size="sm" disabled className="bg-primary">
+          <Check className="w-4 h-4 mr-1" />
+          Voted
+        </Button>
+      );
+    }
+    
+    if (isVoteDisabled) {
+      return (
+        <Button variant="outline" size="sm" disabled className="opacity-50">
+          <Lock className="w-4 h-4 mr-1" />
+          Locked
+        </Button>
+      );
+    }
+    
+    return (
+      <Button 
+        variant="vote" 
+        size="sm"
+        onClick={() => handleVote(songId)}
+        disabled={isLoading}
+      >
+        <Heart className="w-4 h-4 mr-1" />
+        Vote
+      </Button>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -118,6 +181,12 @@ const Leaderboard = () => {
             <p className="text-muted-foreground max-w-xl mx-auto">
               See which tracks are leading the competition in real-time
             </p>
+            {isVoteDisabled && (
+              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary">
+                <Check className="w-4 h-4" />
+                <span className="text-sm font-medium">You have already voted in this contest</span>
+              </div>
+            )}
           </motion.div>
 
           {/* Top 3 Podium */}
@@ -131,6 +200,7 @@ const Leaderboard = () => {
               const order = [1, 0, 2]; // Center is first place
               const displaySong = mockLeaderboard[order[index]];
               const isFirst = order[index] === 0;
+              const isVotedSong = voteInfo.votedSongId === displaySong.id;
               
               return (
                 <motion.div
@@ -138,22 +208,30 @@ const Leaderboard = () => {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.2 + index * 0.1 }}
-                  className={`glass rounded-2xl p-6 text-center ${isFirst ? "md:-mt-8 glow-primary" : ""}`}
+                  className={`glass rounded-2xl p-6 text-center ${isFirst ? "md:-mt-8 glow-primary" : ""} ${isVotedSong ? "ring-2 ring-primary" : ""}`}
                 >
                   <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center font-bold text-lg mb-4 ${getRankStyles(displaySong.rank)}`}>
                     {displaySong.rank}
                   </div>
-                  <img
-                    src={displaySong.cover}
-                    alt={displaySong.title}
-                    className={`w-24 h-24 mx-auto rounded-xl object-cover mb-4 ${isFirst ? "ring-4 ring-primary/50" : ""}`}
-                  />
+                  <div className="relative">
+                    <img
+                      src={displaySong.cover}
+                      alt={displaySong.title}
+                      className={`w-24 h-24 mx-auto rounded-xl object-cover mb-4 ${isFirst ? "ring-4 ring-primary/50" : ""}`}
+                    />
+                    {isVotedSong && (
+                      <div className="absolute -top-2 -right-2 bg-primary text-primary-foreground w-8 h-8 rounded-full flex items-center justify-center">
+                        <Check className="w-4 h-4" />
+                      </div>
+                    )}
+                  </div>
                   <h3 className="font-semibold text-lg">{displaySong.title}</h3>
                   <p className="text-muted-foreground text-sm mb-3">{displaySong.artist}</p>
                   <div className="text-2xl font-display font-bold text-primary">
                     {displaySong.votes.toLocaleString()}
                   </div>
-                  <p className="text-xs text-muted-foreground">votes</p>
+                  <p className="text-xs text-muted-foreground mb-3">votes</p>
+                  {getVoteButton(displaySong.id)}
                 </motion.div>
               );
             })}
@@ -176,57 +254,66 @@ const Leaderboard = () => {
                 <div className="col-span-1"></div>
               </div>
               
-              {mockLeaderboard.map((song, index) => (
-                <motion.div
-                  key={song.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 + index * 0.05 }}
-                  className="grid grid-cols-12 gap-4 p-4 items-center border-b border-border/50 hover:bg-muted/30 transition-colors"
-                >
-                  <div className={`col-span-1 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${getRankStyles(song.rank)}`}>
-                    {song.rank}
-                  </div>
-                  <div className="col-span-1">
-                    <button
-                      onClick={() => setPlayingId(playingId === song.id ? null : song.id)}
-                      className="w-10 h-10 rounded-full bg-primary/20 hover:bg-primary flex items-center justify-center transition-colors group"
-                    >
-                      {playingId === song.id ? (
-                        <Pause className="w-4 h-4 text-primary group-hover:text-primary-foreground" />
-                      ) : (
-                        <Play className="w-4 h-4 text-primary group-hover:text-primary-foreground ml-0.5" />
-                      )}
-                    </button>
-                  </div>
-                  <div className="col-span-5 flex items-center gap-3">
-                    <img
-                      src={song.cover}
-                      alt={song.title}
-                      className="w-12 h-12 rounded-lg object-cover"
-                    />
-                    <div>
-                      <h4 className="font-semibold">{song.title}</h4>
-                      <p className="text-sm text-muted-foreground">{song.artist}</p>
+              {mockLeaderboard.map((song, index) => {
+                const isVotedSong = voteInfo.votedSongId === song.id;
+                
+                return (
+                  <motion.div
+                    key={song.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.5 + index * 0.05 }}
+                    className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-border/50 hover:bg-muted/30 transition-colors ${isVotedSong ? "bg-primary/5" : ""}`}
+                  >
+                    <div className={`col-span-1 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${getRankStyles(song.rank)}`}>
+                      {song.rank}
                     </div>
-                  </div>
-                  <div className="col-span-2 flex justify-center items-center gap-1">
-                    {getTrendIcon(song.rank, song.previousRank)}
-                    <span className="text-xs text-muted-foreground">
-                      {Math.abs(song.rank - song.previousRank) || "—"}
-                    </span>
-                  </div>
-                  <div className="col-span-2 text-right">
-                    <div className="font-semibold">{song.votes.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">{song.percentageOfTotal}%</div>
-                  </div>
-                  <div className="col-span-1">
-                    <Button variant="vote" size="sm">
-                      Vote
-                    </Button>
-                  </div>
-                </motion.div>
-              ))}
+                    <div className="col-span-1">
+                      <button
+                        onClick={() => setPlayingId(playingId === song.id ? null : song.id)}
+                        className="w-10 h-10 rounded-full bg-primary/20 hover:bg-primary flex items-center justify-center transition-colors group"
+                      >
+                        {playingId === song.id ? (
+                          <Pause className="w-4 h-4 text-primary group-hover:text-primary-foreground" />
+                        ) : (
+                          <Play className="w-4 h-4 text-primary group-hover:text-primary-foreground ml-0.5" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="col-span-5 flex items-center gap-3">
+                      <div className="relative">
+                        <img
+                          src={song.cover}
+                          alt={song.title}
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                        {isVotedSong && (
+                          <div className="absolute -top-1 -right-1 bg-primary text-primary-foreground w-5 h-5 rounded-full flex items-center justify-center">
+                            <Check className="w-3 h-3" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold">{song.title}</h4>
+                        <p className="text-sm text-muted-foreground">{song.artist}</p>
+                      </div>
+                    </div>
+                    <div className="col-span-2 flex justify-center items-center gap-1">
+                      {getTrendIcon(song.rank, song.previousRank)}
+                      <span className="text-xs text-muted-foreground">
+                        {Math.abs(song.rank - song.previousRank) || "—"}
+                      </span>
+                    </div>
+                    <div className="col-span-2 text-right">
+                      <div className="font-semibold">{song.votes.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">{song.percentageOfTotal}%</div>
+                    </div>
+                    <div className="col-span-1">
+                      {getVoteButton(song.id)}
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           </motion.div>
         </div>
