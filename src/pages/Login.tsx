@@ -6,18 +6,47 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { sanitizeInput, VALIDATION_PATTERNS } from "@/config/api";
 
 const Login = () => {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const { login } = useAuth();
+  const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Will be connected to backend later
-    console.log("Login data:", formData);
+    setError("");
+    
+    const sanitizedEmail = sanitizeInput(formData.email.trim().toLowerCase());
+    
+    if (!VALIDATION_PATTERNS.email.test(sanitizedEmail)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      await login(sanitizedEmail, formData.password);
+      toast({
+        title: "Welcome back!",
+        description: "You have successfully logged in.",
+      });
+      navigate("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -53,7 +82,10 @@ const Login = () => {
                     placeholder="you@example.com"
                     className="pl-10"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, email: e.target.value });
+                      setError("");
+                    }}
                     required
                   />
                 </div>
@@ -74,14 +106,27 @@ const Login = () => {
                     placeholder="Enter your password"
                     className="pl-10"
                     value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, password: e.target.value });
+                      setError("");
+                    }}
                     required
                   />
                 </div>
               </div>
 
-              <Button type="submit" variant="hero" size="lg" className="w-full">
-                Sign In
+              {error && (
+                <p className="text-sm text-destructive text-center">{error}</p>
+              )}
+
+              <Button 
+                type="submit" 
+                variant="hero" 
+                size="lg" 
+                className="w-full"
+                disabled={isLoading}
+              >
+                {isLoading ? "Signing in..." : "Sign In"}
               </Button>
 
               <p className="text-center text-sm text-muted-foreground">

@@ -38,6 +38,9 @@ export const API_ENDPOINTS = {
     LOGOUT: `${API_BASE_URL}/auth/logout`,
     ME: `${API_BASE_URL}/auth/me`,
     REFRESH: `${API_BASE_URL}/auth/refresh`,
+    FORGOT_PASSWORD: `${API_BASE_URL}/auth/forgot-password`,
+    RESET_PASSWORD: `${API_BASE_URL}/auth/reset-password`,
+    VERIFY_RESET_TOKEN: `${API_BASE_URL}/auth/verify-reset-token`,
   },
   
   // Users
@@ -141,6 +144,15 @@ export const VALIDATION = {
   NAME_MAX_LENGTH: 100,
   ARTIST_NAME_MAX_LENGTH: 50,
   GENRE_MAX_LENGTH: 30,
+};
+
+// Security: Validation patterns for form inputs
+export const VALIDATION_PATTERNS = {
+  email: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+  password: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/,
+  username: /^[a-zA-Z0-9_]{3,30}$/,
+  stageName: /^[a-zA-Z0-9\s-]{2,50}$/,
+  phone: /^[+]?[0-9]{10,15}$/,
 };
 
 // Helper function for API calls with auth token
